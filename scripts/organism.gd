@@ -28,6 +28,10 @@ var death_time: float = -1.0
 var recent_mutations: Array[String] = []
 var animation_phase: float = 0.0
 
+# Short-lived visual state set whenever a real bite removes biomass.
+var feeding_flash_timer: float = 0.0
+var last_bite_amount: float = 0.0
+
 func _init(p_id: int, p_genome: Genome, p_position: Vector2, p_generation: int = 0, p_parent_id: int = -1) -> void:
     id = p_id
     genome = p_genome
