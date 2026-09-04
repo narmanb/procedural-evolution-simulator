@@ -1,10 +1,10 @@
 class_name EvolutionSimulation
 extends RefCounted
 
-const WORLD_SIZE := Vector2(1280.0, 720.0)
-const INITIAL_CREATURES := 58
-const INITIAL_FOOD_PATCHES := 105
-const MAX_CREATURES := 650
+const WORLD_SIZE := Vector2(720.0, 1130.0)
+const INITIAL_CREATURES := 14
+const INITIAL_FOOD_PATCHES := 72
+const MAX_CREATURES := 450
 
 var rng := RandomNumberGenerator.new()
 var seed_value: int = 1
@@ -19,6 +19,8 @@ var births: int = 0
 var deaths: int = 0
 var max_generation: int = 0
 var mutation_multiplier: float = 1.0
+var food_regrowth_multiplier: float = 1.0
+var drought_timer: float = 0.0
 
 func reset(p_seed: int = 0) -> void:
     organisms.clear()
@@ -30,6 +32,9 @@ func reset(p_seed: int = 0) -> void:
     births = 0
     deaths = 0
     max_generation = 0
+    mutation_multiplier = 1.0
+    food_regrowth_multiplier = 1.0
+    drought_timer = 0.0
 
     if p_seed == 0:
         rng.randomize()
@@ -43,28 +48,28 @@ func reset(p_seed: int = 0) -> void:
     _record_event("origin", "Ancestral population established")
 
 func _create_food_field() -> void:
-    # Plants are persistent producers with local carrying capacity. Food is not
-    # spawned under hungry creatures; overgrazing can genuinely deplete areas.
     for i in range(INITIAL_FOOD_PATCHES):
-        var margin := 48.0
+        var margin: float = 34.0
         var p := Vector2(
             rng.randf_range(margin, WORLD_SIZE.x - margin),
-            rng.randf_range(100.0, WORLD_SIZE.y - margin)
+            rng.randf_range(96.0, WORLD_SIZE.y - margin)
         )
-        var capacity := rng.randf_range(18.0, 55.0)
-        var regrowth := rng.randf_range(0.45, 1.15)
+        var capacity: float = rng.randf_range(20.0, 58.0)
+        var regrowth: float = rng.randf_range(0.42, 1.10)
         food_patches.append(FoodPatch.new(p, capacity, regrowth, rng.randf_range(0.0, TAU)))
 
 func _create_ancestral_population() -> void:
     var founder := Genome.ancestral(rng)
     for i in range(INITIAL_CREATURES):
-        var genome := founder.mutated_copy(rng, 0.85)
+        # Founders remain recognizably related, but have enough variation to make
+        # the opening population readable rather than a wall of identical worms.
+        var genome := founder.mutated_copy(rng, 1.35)
         var p := Vector2(
-            rng.randf_range(110.0, WORLD_SIZE.x - 110.0),
-            rng.randf_range(140.0, WORLD_SIZE.y - 80.0)
+            rng.randf_range(80.0, WORLD_SIZE.x - 80.0),
+            rng.randf_range(135.0, WORLD_SIZE.y - 90.0)
         )
         var org := _new_organism(genome, p, 0, -1)
-        org.energy = genome.max_energy() * rng.randf_range(0.48, 0.82)
+        org.energy = genome.max_energy() * rng.randf_range(0.55, 0.86)
         organisms.append(org)
 
 func _new_organism(genome: Genome, p: Vector2, generation: int, parent_id: int) -> Organism:
@@ -86,9 +91,14 @@ func _new_organism(genome: Genome, p: Vector2, generation: int, parent_id: int) 
 
 func step(dt: float) -> void:
     elapsed_sim_time += dt
+    drought_timer = maxf(0.0, drought_timer - dt)
+
+    var effective_regrowth: float = food_regrowth_multiplier
+    if drought_timer > 0.0:
+        effective_regrowth *= 0.035
 
     for patch in food_patches:
-        patch.step(dt)
+        patch.step(dt, effective_regrowth)
 
     var newborns: Array[Organism] = []
 
@@ -113,8 +123,7 @@ func step(dt: float) -> void:
         org.energy -= org.velocity.length() * org.genome.movement_cost_per_unit() * dt
 
         if _can_reproduce(org) and organisms.size() + newborns.size() < MAX_CREATURES:
-            var child := _reproduce(org)
-            newborns.append(child)
+            newborns.append(_reproduce(org))
 
     if not newborns.is_empty():
         organisms.append_array(newborns)
@@ -130,12 +139,12 @@ func _update_behavior(org: Organism) -> void:
         return
     org.think_timer = rng.randf_range(0.16, 0.38)
 
-    var hunger := 1.0 - org.energy_ratio()
-    var food_index := _find_food(org.position, org.genome.vision_range())
+    var hunger: float = 1.0 - org.energy_ratio()
+    var food_index: int = _find_food(org.position, org.genome.vision_range())
 
     if hunger > 0.26 and food_index != -1:
         org.target_food_index = food_index
-        var target := food_patches[food_index].position
+        var target: Vector2 = food_patches[food_index].position
         org.desired_heading = org.position.angle_to_point(target)
         org.behavior = "foraging"
         return
@@ -154,35 +163,35 @@ func _update_behavior(org: Organism) -> void:
         org.desired_heading += rng.randf_range(-1.15, 1.15)
 
 func _move_organism(org: Organism, dt: float) -> void:
-    var angle_delta := wrapf(org.desired_heading - org.heading, -PI, PI)
-    var max_turn := org.genome.turn_rate() * dt
+    var angle_delta: float = wrapf(org.desired_heading - org.heading, -PI, PI)
+    var max_turn: float = org.genome.turn_rate() * dt
     org.heading += clampf(angle_delta, -max_turn, max_turn)
 
-    var target_speed := org.genome.max_speed()
+    var target_speed: float = org.genome.max_speed()
     if org.behavior == "exploring":
         target_speed *= 0.55
     elif org.energy_ratio() < 0.18:
         target_speed *= 0.62
 
-    var desired_velocity := Vector2.RIGHT.rotated(org.heading) * target_speed
+    var desired_velocity: Vector2 = Vector2.RIGHT.rotated(org.heading) * target_speed
     org.velocity = org.velocity.move_toward(desired_velocity, org.genome.acceleration() * dt)
 
-    var before := org.position
+    var before: Vector2 = org.position
     org.position += org.velocity * dt
     org.distance_traveled += before.distance_to(org.position)
 
-    var radius := org.genome.radius() * 1.8
+    var radius: float = org.genome.radius() * 1.8
     if org.position.x < radius:
         org.position.x = radius
-        org.heading = 0.0 + rng.randf_range(-0.35, 0.35)
+        org.heading = rng.randf_range(-0.35, 0.35)
         org.desired_heading = org.heading
     elif org.position.x > WORLD_SIZE.x - radius:
         org.position.x = WORLD_SIZE.x - radius
         org.heading = PI + rng.randf_range(-0.35, 0.35)
         org.desired_heading = org.heading
 
-    if org.position.y < 92.0 + radius:
-        org.position.y = 92.0 + radius
+    if org.position.y < 82.0 + radius:
+        org.position.y = 82.0 + radius
         org.heading = PI * 0.5 + rng.randf_range(-0.35, 0.35)
         org.desired_heading = org.heading
     elif org.position.y > WORLD_SIZE.y - radius:
@@ -193,30 +202,29 @@ func _move_organism(org: Organism, dt: float) -> void:
 func _feed_if_possible(org: Organism, dt: float) -> void:
     if org.target_food_index < 0 or org.target_food_index >= food_patches.size():
         return
-    var patch := food_patches[org.target_food_index]
+    var patch: FoodPatch = food_patches[org.target_food_index]
     if patch.biomass <= 0.05:
         org.target_food_index = -1
         return
 
-    var eat_radius := 10.0 + org.genome.radius() * 1.6
+    var eat_radius: float = 10.0 + org.genome.radius() * 1.6
     if org.position.distance_squared_to(patch.position) <= eat_radius * eat_radius:
         org.behavior = "feeding"
-        var requested := org.genome.bite_rate() * dt
-        var eaten := patch.consume(requested)
-        # Larger bodies digest more total food but are less efficient per unit mass.
-        var efficiency := lerpf(1.15, 0.88, org.genome.body_size)
+        var requested: float = org.genome.bite_rate() * dt
+        var eaten: float = patch.consume(requested)
+        var efficiency: float = lerpf(1.15, 0.88, org.genome.body_size)
         org.energy = minf(org.genome.max_energy(), org.energy + eaten * 2.6 * efficiency)
         org.food_consumed += eaten
         org.velocity *= maxf(0.0, 1.0 - 3.0 * dt)
 
 func _find_food(position: Vector2, vision_range: float) -> int:
-    var best_index := -1
-    var best_d2 := vision_range * vision_range
+    var best_index: int = -1
+    var best_d2: float = vision_range * vision_range
     for i in range(food_patches.size()):
-        var patch := food_patches[i]
+        var patch: FoodPatch = food_patches[i]
         if patch.biomass < 0.8:
             continue
-        var d2 := position.distance_squared_to(patch.position)
+        var d2: float = position.distance_squared_to(patch.position)
         if d2 < best_d2:
             best_d2 = d2
             best_index = i
@@ -233,11 +241,11 @@ func _can_reproduce(org: Organism) -> bool:
 
 func _reproduce(parent: Organism) -> Organism:
     var child_genome := parent.genome.mutated_copy(rng, mutation_multiplier)
-    var offset := Vector2.RIGHT.rotated(rng.randf_range(0.0, TAU)) * rng.randf_range(10.0, 24.0)
-    var child := _new_organism(child_genome, parent.position + offset, parent.generation + 1, parent.id)
+    var offset: Vector2 = Vector2.RIGHT.rotated(rng.randf_range(0.0, TAU)) * rng.randf_range(10.0, 24.0)
+    var child := _new_organism(child_genome, _clamp_world(parent.position + offset), parent.generation + 1, parent.id)
     child.recent_mutations = child_genome.mutation_summary(parent.genome)
 
-    var investment := parent.genome.max_energy() * parent.genome.offspring_energy_fraction()
+    var investment: float = parent.genome.max_energy() * parent.genome.offspring_energy_fraction()
     parent.energy -= investment
     child.energy = minf(child.genome.max_energy(), investment * lerpf(0.80, 1.12, parent.genome.offspring_investment_gene))
     parent.offspring_count += 1
@@ -250,6 +258,85 @@ func _reproduce(parent: Organism) -> Organism:
         _record_event("generation", "Generation %d reached" % child.generation)
 
     return child
+
+# ---------------- Player laboratory interventions ----------------
+
+func trigger_food_bloom() -> void:
+    for patch in food_patches:
+        patch.bloom(0.62)
+    _record_event("intervention", "Player triggered a producer bloom")
+
+func trigger_drought(duration: float = 28.0) -> void:
+    drought_timer = maxf(drought_timer, duration)
+    _record_event("intervention", "Player triggered a drought")
+
+func introduce_mutants(count: int = 3) -> void:
+    for i in range(count):
+        if organisms.size() >= MAX_CREATURES:
+            break
+        var base_genome: Genome
+        if organisms.is_empty():
+            base_genome = Genome.ancestral(rng)
+        else:
+            var source_index: int = rng.randi_range(0, organisms.size() - 1)
+            base_genome = organisms[source_index].genome
+        var genome := base_genome.mutated_copy(rng, 3.6)
+        var p := Vector2(
+            rng.randf_range(70.0, WORLD_SIZE.x - 70.0),
+            rng.randf_range(120.0, WORLD_SIZE.y - 75.0)
+        )
+        var org := _new_organism(genome, p, 0, -1)
+        org.energy = genome.max_energy() * 0.78
+        org.recent_mutations = genome.mutation_summary(base_genome)
+        organisms.append(org)
+    _record_event("intervention", "Player introduced %d mutant founders" % count)
+
+func cull_fraction(fraction: float = 0.25) -> void:
+    var target: int = mini(organisms.size(), maxi(1, int(round(float(organisms.size()) * fraction))))
+    for i in range(target):
+        if organisms.is_empty():
+            break
+        var index: int = rng.randi_range(0, organisms.size() - 1)
+        var org: Organism = organisms[index]
+        _kill(org, "player cull")
+        organisms.remove_at(index)
+    _record_event("intervention", "Player culled %d organisms" % target)
+
+func boost_organism(id: int) -> bool:
+    var org := get_organism_by_id(id)
+    if org == null:
+        return false
+    org.energy = org.genome.max_energy()
+    _record_event("intervention", "Creature #%d was provisioned" % id)
+    return true
+
+func force_mutated_offspring(id: int) -> int:
+    var parent := get_organism_by_id(id)
+    if parent == null or organisms.size() >= MAX_CREATURES:
+        return -1
+    var genome := parent.genome.mutated_copy(rng, 4.2)
+    var offset: Vector2 = Vector2.RIGHT.rotated(rng.randf_range(0.0, TAU)) * 28.0
+    var child := _new_organism(genome, _clamp_world(parent.position + offset), parent.generation + 1, parent.id)
+    child.energy = child.genome.max_energy() * 0.72
+    child.recent_mutations = genome.mutation_summary(parent.genome)
+    organisms.append(child)
+    parent.offspring_count += 1
+    births += 1
+    max_generation = maxi(max_generation, child.generation)
+    _record_event("intervention", "Creature #%d produced a lab-selected mutant" % id)
+    return child.id
+
+func remove_organism(id: int) -> bool:
+    var org := get_organism_by_id(id)
+    if org == null:
+        return false
+    _kill(org, "player removal")
+    organisms.erase(org)
+    _record_event("intervention", "Creature #%d was removed" % id)
+    return true
+
+func _clamp_world(p: Vector2) -> Vector2:
+    return Vector2(clampf(p.x, 30.0, WORLD_SIZE.x - 30.0), clampf(p.y, 92.0, WORLD_SIZE.y - 30.0))
 
 func _kill(org: Organism, cause: String) -> void:
     if not org.alive:
@@ -267,10 +354,8 @@ func _detect_population_events() -> void:
             _record_event("extinction", "The founding ecosystem collapsed")
         return
 
-    # Sparse automatic milestones prove the event-history plumbing without
-    # prematurely implementing the full speciation system.
-    if organisms.size() >= 180 and not _event_exists("population_180"):
-        _record_event("population_180", "Population boom: 180 living organisms")
+    if organisms.size() >= 120 and not _event_exists("population_120"):
+        _record_event("population_120", "Population boom: 120 living organisms")
     if max_generation >= 50 and not _event_exists("generation_50"):
         _record_event("generation_50", "Fifty generations of descent recorded")
 
@@ -289,11 +374,11 @@ func get_organism_by_id(id: int) -> Organism:
             return org
     return null
 
-func nearest_organism(point: Vector2, max_distance: float = 38.0) -> Organism:
+func nearest_organism(point: Vector2, max_distance: float = 42.0) -> Organism:
     var best: Organism = null
-    var best_d2 := max_distance * max_distance
+    var best_d2: float = max_distance * max_distance
     for org in organisms:
-        var d2 := org.position.distance_squared_to(point)
+        var d2: float = org.position.distance_squared_to(point)
         if d2 <= best_d2:
             best_d2 = d2
             best = org
@@ -302,13 +387,13 @@ func nearest_organism(point: Vector2, max_distance: float = 38.0) -> Organism:
 func population_mean_gene(gene_name: String) -> float:
     if organisms.is_empty():
         return 0.0
-    var total := 0.0
+    var total: float = 0.0
     for org in organisms:
         total += float(org.genome.get(gene_name))
     return total / float(organisms.size())
 
 func total_food_biomass() -> float:
-    var total := 0.0
+    var total: float = 0.0
     for patch in food_patches:
         total += patch.biomass
     return total
