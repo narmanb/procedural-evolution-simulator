@@ -8,6 +8,9 @@ config/name="Procedural Evolution Simulator"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.3")
 
+[autoload]
+UIInputPassthrough="*res://scripts/ui_input_passthrough.gd"
+
 [display]
 window/size/viewport_width=720
 window/size/viewport_height=1560
