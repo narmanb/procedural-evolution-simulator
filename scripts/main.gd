@@ -29,7 +29,7 @@ func _ready() -> void:
     _refresh_ui()
 
 func _process(delta: float) -> void:
-    var speed := SPEEDS[speed_index]
+    var speed: float = float(SPEEDS[speed_index])
     if speed > 0.0:
         accumulator += delta * speed
         var steps := 0
