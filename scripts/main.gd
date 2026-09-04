@@ -10,6 +10,7 @@ var paused: bool = false
 var accumulator: float = 0.0
 var selected_id: int = -1
 var last_population: int = -1
+var food_paint_mode: bool = false
 
 var stats_label: Label
 var event_label: Label
@@ -17,13 +18,13 @@ var inspector_panel: PanelContainer
 var inspector_label: RichTextLabel
 var pause_button: Button
 var mutation_button: Button
-var regrowth_button: Button
-var drought_button: Button
 var vision_button: Button
 var food_map_button: Button
+var food_paint_button: Button
 var boost_button: Button
 var breed_button: Button
 var remove_button: Button
+var drop_food_button: Button
 var speed_buttons: Array[Button] = []
 
 func _ready() -> void:
@@ -89,10 +90,14 @@ func _unhandled_input(event: InputEvent) -> void:
         pressed = true
 
     if pressed and screen_pos.y >= 78.0 and screen_pos.y <= EvolutionSimulation.WORLD_SIZE.y:
-        var org := simulation.nearest_organism(screen_pos, 48.0)
-        selected_id = org.id if org != null else -1
-        renderer.select_creature(selected_id)
-        _refresh_inspector()
+        if food_paint_mode:
+            simulation.add_food_at(screen_pos, 5)
+        else:
+            var org := simulation.nearest_organism(screen_pos, 54.0)
+            selected_id = org.id if org != null else -1
+            renderer.select_creature(selected_id)
+            _refresh_inspector()
+        get_viewport().set_input_as_handled()
 
 func _build_ui() -> void:
     var canvas := CanvasLayer.new()
@@ -101,6 +106,7 @@ func _build_ui() -> void:
 
     var ui_root := Control.new()
     ui_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
     canvas.add_child(ui_root)
 
     var top_panel := PanelContainer.new()
@@ -119,27 +125,28 @@ func _build_ui() -> void:
     var title := Label.new()
     title.text = "EVOLUTION LAB"
     title.add_theme_font_size_override("font_size", 20)
-    title.custom_minimum_size = Vector2(180.0, 0.0)
+    title.custom_minimum_size = Vector2(190.0, 0.0)
     top.add_child(title)
 
     stats_label = Label.new()
     stats_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     stats_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-    stats_label.add_theme_font_size_override("font_size", 16)
+    stats_label.add_theme_font_size_override("font_size", 15)
     top.add_child(stats_label)
 
+    # Contextual selected-creature panel. All individual actions live here.
     inspector_panel = PanelContainer.new()
     inspector_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
     inspector_panel.offset_left = 10.0
     inspector_panel.offset_right = -10.0
-    inspector_panel.offset_top = -594.0
+    inspector_panel.offset_top = -684.0
     inspector_panel.offset_bottom = -408.0
-    inspector_panel.add_theme_stylebox_override("panel", _panel_style(Color("10242de8"), 14))
+    inspector_panel.add_theme_stylebox_override("panel", _panel_style(Color("10242df2"), 14))
     inspector_panel.visible = false
     ui_root.add_child(inspector_panel)
 
     var inspector_box := VBoxContainer.new()
-    inspector_box.add_theme_constant_override("separation", 4)
+    inspector_box.add_theme_constant_override("separation", 6)
     inspector_panel.add_child(inspector_box)
 
     var inspector_header := HBoxContainer.new()
@@ -153,16 +160,37 @@ func _build_ui() -> void:
 
     vision_button = _make_button("VISION", _toggle_vision)
     vision_button.toggle_mode = true
-    vision_button.custom_minimum_size = Vector2(104.0, 42.0)
+    vision_button.custom_minimum_size = Vector2(108.0, 42.0)
     inspector_header.add_child(vision_button)
 
     inspector_label = RichTextLabel.new()
     inspector_label.bbcode_enabled = true
     inspector_label.fit_content = false
     inspector_label.scroll_active = false
-    inspector_label.custom_minimum_size = Vector2(0.0, 118.0)
+    inspector_label.custom_minimum_size = Vector2(0.0, 134.0)
     inspector_label.add_theme_font_size_override("normal_font_size", 15)
     inspector_box.add_child(inspector_label)
+
+    var selected_grid := GridContainer.new()
+    selected_grid.columns = 4
+    selected_grid.add_theme_constant_override("h_separation", 6)
+    inspector_box.add_child(selected_grid)
+
+    drop_food_button = _make_button("DROP FOOD", _drop_food_selected)
+    drop_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    selected_grid.add_child(drop_food_button)
+
+    boost_button = _make_button("ENERGY", _boost_selected)
+    boost_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    selected_grid.add_child(boost_button)
+
+    breed_button = _make_button("MONSTER CHILD", _breed_selected)
+    breed_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    selected_grid.add_child(breed_button)
+
+    remove_button = _make_button("REMOVE", _remove_selected)
+    remove_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    selected_grid.add_child(remove_button)
 
     var controls_panel := PanelContainer.new()
     controls_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
@@ -170,7 +198,7 @@ func _build_ui() -> void:
     controls_panel.offset_right = -8.0
     controls_panel.offset_top = -398.0
     controls_panel.offset_bottom = -8.0
-    controls_panel.add_theme_stylebox_override("panel", _panel_style(Color("0c1c24f5"), 16))
+    controls_panel.add_theme_stylebox_override("panel", _panel_style(Color("0c1c24f7"), 16))
     ui_root.add_child(controls_panel)
 
     var controls := VBoxContainer.new()
@@ -179,88 +207,74 @@ func _build_ui() -> void:
 
     var control_header := HBoxContainer.new()
     controls.add_child(control_header)
+
     var control_title := Label.new()
     control_title.text = "LAB CONTROLS"
     control_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     control_title.add_theme_font_size_override("font_size", 19)
     control_header.add_child(control_title)
+
     var hint := Label.new()
-    hint.text = "Tap a creature to inspect it"
+    hint.text = "Food is player-controlled"
     hint.add_theme_color_override("font_color", Color("91aab5"))
     hint.add_theme_font_size_override("font_size", 13)
     control_header.add_child(hint)
 
-    var time_row := HBoxContainer.new()
-    time_row.add_theme_constant_override("separation", 6)
-    controls.add_child(time_row)
+    var time_grid := GridContainer.new()
+    time_grid.columns = 5
+    time_grid.add_theme_constant_override("h_separation", 6)
+    controls.add_child(time_grid)
 
     pause_button = _make_button("Ⅱ PAUSE", _toggle_pause)
     pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    time_row.add_child(pause_button)
+    time_grid.add_child(pause_button)
 
     for i in range(SPEEDS.size()):
         var button := _make_button("%gx" % SPEEDS[i], _set_speed.bind(i))
         button.toggle_mode = true
         button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        time_row.add_child(button)
+        time_grid.add_child(button)
         speed_buttons.append(button)
 
-    var environment_row := HBoxContainer.new()
-    environment_row.add_theme_constant_override("separation", 6)
-    controls.add_child(environment_row)
+    var lab_grid := GridContainer.new()
+    lab_grid.columns = 3
+    lab_grid.add_theme_constant_override("h_separation", 6)
+    lab_grid.add_theme_constant_override("v_separation", 6)
+    controls.add_child(lab_grid)
+
+    food_paint_button = _make_button("FOOD PAINT", _toggle_food_paint)
+    food_paint_button.toggle_mode = true
+    food_paint_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    lab_grid.add_child(food_paint_button)
+
+    var random_food_button := _make_button("+ RANDOM FOOD", _random_food)
+    random_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    lab_grid.add_child(random_food_button)
+
+    var clear_food_button := _make_button("CLEAR FOOD", _clear_food)
+    clear_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    lab_grid.add_child(clear_food_button)
 
     mutation_button = _make_button("MUTATION 1x", _cycle_mutation)
     mutation_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_row.add_child(mutation_button)
+    lab_grid.add_child(mutation_button)
 
-    regrowth_button = _make_button("FOOD 1x", _cycle_regrowth)
-    regrowth_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_row.add_child(regrowth_button)
+    var mutants_button := _make_button("+3 MUTANTS", _introduce_mutants)
+    mutants_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    lab_grid.add_child(mutants_button)
 
-    var bloom_button := _make_button("BLOOM", _food_bloom)
-    bloom_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_row.add_child(bloom_button)
-
-    drought_button = _make_button("DROUGHT", _drought)
-    drought_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_row.add_child(drought_button)
+    var cull_button := _make_button("CULL 25%", _cull_population)
+    cull_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    lab_grid.add_child(cull_button)
 
     food_map_button = _make_button("FOOD MAP", _toggle_food_map)
     food_map_button.toggle_mode = true
     food_map_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    environment_row.add_child(food_map_button)
-
-    var population_row := HBoxContainer.new()
-    population_row.add_theme_constant_override("separation", 6)
-    controls.add_child(population_row)
-
-    var mutants_button := _make_button("+3 MUTANTS", _introduce_mutants)
-    mutants_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    population_row.add_child(mutants_button)
-
-    var cull_button := _make_button("CULL 25%", _cull_population)
-    cull_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    population_row.add_child(cull_button)
+    lab_grid.add_child(food_map_button)
 
     var new_world_button := _make_button("NEW WORLD", _new_world)
     new_world_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    population_row.add_child(new_world_button)
-
-    var selected_row := HBoxContainer.new()
-    selected_row.add_theme_constant_override("separation", 6)
-    controls.add_child(selected_row)
-
-    boost_button = _make_button("FEED SELECTED", _boost_selected)
-    boost_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_row.add_child(boost_button)
-
-    breed_button = _make_button("MUTANT CHILD", _breed_selected)
-    breed_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_row.add_child(breed_button)
-
-    remove_button = _make_button("REMOVE SELECTED", _remove_selected)
-    remove_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_row.add_child(remove_button)
+    lab_grid.add_child(new_world_button)
 
     event_label = Label.new()
     event_label.custom_minimum_size = Vector2(0.0, 44.0)
@@ -275,8 +289,8 @@ func _build_ui() -> void:
 func _make_button(text: String, callback: Callable) -> Button:
     var button := Button.new()
     button.text = text
-    button.custom_minimum_size = Vector2(0.0, 54.0)
-    button.add_theme_font_size_override("font_size", 15)
+    button.custom_minimum_size = Vector2(0.0, 52.0)
+    button.add_theme_font_size_override("font_size", 14)
     button.add_theme_stylebox_override("normal", _button_style(Color("18333d"), 10))
     button.add_theme_stylebox_override("hover", _button_style(Color("214552"), 10))
     button.add_theme_stylebox_override("pressed", _button_style(Color("286577"), 10))
@@ -330,7 +344,7 @@ func _update_speed_buttons() -> void:
         speed_buttons[i].button_pressed = not paused and i == speed_index
 
 func _cycle_mutation() -> void:
-    var levels := [0.5, 1.0, 2.0, 5.0]
+    var levels := [0.5, 1.0, 3.0, 8.0, 20.0]
     var current: int = levels.find(simulation.mutation_multiplier)
     if current < 0:
         current = 1
@@ -338,20 +352,19 @@ func _cycle_mutation() -> void:
     simulation.mutation_multiplier = float(levels[current])
     mutation_button.text = "MUTATION %gx" % simulation.mutation_multiplier
 
-func _cycle_regrowth() -> void:
-    var levels := [0.25, 0.5, 1.0, 2.0, 4.0]
-    var current: int = levels.find(simulation.food_regrowth_multiplier)
-    if current < 0:
-        current = 2
-    current = (current + 1) % levels.size()
-    simulation.food_regrowth_multiplier = float(levels[current])
-    regrowth_button.text = "FOOD %gx" % simulation.food_regrowth_multiplier
+func _toggle_food_paint() -> void:
+    food_paint_mode = food_paint_button.button_pressed
+    renderer.food_paint_mode = food_paint_mode
+    if food_paint_mode:
+        food_paint_button.text = "FOOD PAINT: ON"
+    else:
+        food_paint_button.text = "FOOD PAINT"
 
-func _food_bloom() -> void:
-    simulation.trigger_food_bloom()
+func _random_food() -> void:
+    simulation.scatter_food(18)
 
-func _drought() -> void:
-    simulation.trigger_drought(28.0)
+func _clear_food() -> void:
+    simulation.clear_food()
 
 func _introduce_mutants() -> void:
     simulation.introduce_mutants(3)
@@ -368,6 +381,10 @@ func _toggle_vision() -> void:
 
 func _toggle_food_map() -> void:
     renderer.show_food_overlay = food_map_button.button_pressed
+
+func _drop_food_selected() -> void:
+    simulation.drop_food_for_organism(selected_id)
+    _refresh_inspector()
 
 func _boost_selected() -> void:
     simulation.boost_organism(selected_id)
@@ -393,10 +410,13 @@ func _new_world() -> void:
     speed_index = 0
     paused = false
     accumulator = 0.0
+    food_paint_mode = false
     mutation_button.text = "MUTATION 1x"
-    regrowth_button.text = "FOOD 1x"
+    food_paint_button.text = "FOOD PAINT"
+    food_paint_button.button_pressed = false
     food_map_button.button_pressed = false
     vision_button.button_pressed = false
+    renderer.food_paint_mode = false
     renderer.show_food_overlay = false
     renderer.show_vision_overlay = false
     _update_speed_buttons()
@@ -410,20 +430,16 @@ func _refresh_ui() -> void:
     var state: String = "PAUSED" if paused else "%gx" % SPEEDS[speed_index]
     stats_label.text = "Pop %d   Gen %d   Births %d   %s" % [pop, simulation.max_generation, simulation.births, state]
 
-    if simulation.drought_timer > 0.0:
-        drought_button.text = "DROUGHT %ds" % int(ceil(simulation.drought_timer))
-    else:
-        drought_button.text = "DROUGHT"
-
     if simulation.event_log.is_empty():
-        event_label.text = "Seed %d   •   Tap a creature, then use the selected-creature controls." % simulation.seed_value
+        event_label.text = "No food yet. Use RANDOM FOOD or FOOD PAINT, then watch who reaches it first."
     else:
         var last_event: Dictionary = simulation.event_log.back()
-        event_label.text = "Seed %d   •   %s   •   Food %.0f   •   Sim %s" % [
-            simulation.seed_value,
-            str(last_event.get("text", "")),
+        var paint_text: String = "   •   FOOD PAINT ON" if food_paint_mode else ""
+        event_label.text = "Food %.0f   •   %s   •   Sim %s%s" % [
             simulation.total_food_biomass(),
-            _format_time(simulation.elapsed_sim_time)
+            str(last_event.get("text", "")),
+            _format_time(simulation.elapsed_sim_time),
+            paint_text
         ]
 
     if selected_id != -1 and simulation.get_organism_by_id(selected_id) == null:
@@ -447,19 +463,22 @@ func _refresh_inspector() -> void:
 
     var parent_text: String = "founder" if org.parent_id == -1 else "#%d" % org.parent_id
     var mutation_text: String = ", ".join(org.recent_mutations) if not org.recent_mutations.is_empty() else "founder variation"
+    var feeding_text: String = " [color=#75ff8c][b]EATING NOW[/b][/color]" if org.feeding_flash_timer > 0.0 else ""
     inspector_label.text = (
-        "[b]Creature #%d[/b]   Gen %d   Parent %s   Energy %.0f%%\n" +
+        "[b]Creature #%d[/b]   Gen %d   Parent %s   Energy %.0f%%%s\n" +
         "Age %.1f / %.1f   Behavior: [color=#8ee8d8]%s[/color]   Offspring %d\n" +
-        "%s\n" +
+        "Food eaten %.1f   •   %s\n" +
         "[color=#9bb7c2]Mutation: %s[/color]"
     ) % [
-        org.id, org.generation, parent_text, org.energy_ratio() * 100.0,
+        org.id, org.generation, parent_text, org.energy_ratio() * 100.0, feeding_text,
         org.age, org.genome.lifespan(), org.behavior, org.offspring_count,
-        org.genome.compact_description(), mutation_text
+        org.food_consumed, org.genome.compact_description(), mutation_text
     ]
 
 func _update_selected_buttons() -> void:
     var has_selection: bool = simulation.get_organism_by_id(selected_id) != null
+    if drop_food_button != null:
+        drop_food_button.disabled = not has_selection
     if boost_button != null:
         boost_button.disabled = not has_selection
     if breed_button != null:
