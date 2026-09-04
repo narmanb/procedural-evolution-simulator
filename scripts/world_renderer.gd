@@ -115,9 +115,10 @@ func _draw_creature(org: Organism) -> void:
         var y_wave := sin(swim - float(segment_index) * 0.72) * wave_amp
         var swing := sin(swim * 1.35 + float(i) * 1.7) * 0.48
         var reach := g.appendage_reach() * (0.90 + 0.12 * speed_ratio)
-        for side in [-1.0, 1.0]:
+        for side_value in [-1.0, 1.0]:
+            var side: float = float(side_value)
             var root := Vector2(x, y_wave + side * base_radius * 0.50)
-            var angle := side * (PI * 0.47 + swing * 0.35)
+            var angle: float = side * (PI * 0.47 + swing * 0.35)
             var tip := root + Vector2.RIGHT.rotated(angle) * reach
             draw_line(root, tip, outline, maxf(1.4, base_radius * 0.18), true)
             draw_circle(tip, maxf(1.2, base_radius * 0.16), highlight)
