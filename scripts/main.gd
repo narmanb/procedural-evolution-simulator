@@ -134,154 +134,169 @@ func _build_ui() -> void:
     stats_label.add_theme_font_size_override("font_size", 15)
     top.add_child(stats_label)
 
-    # Contextual selected-creature panel. All individual actions live here.
+    # Selected creature card. Uses explicit positions so controls cannot be
+    # pushed off-screen by container minimum-size calculations on Android.
     inspector_panel = PanelContainer.new()
     inspector_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
     inspector_panel.offset_left = 10.0
     inspector_panel.offset_right = -10.0
-    inspector_panel.offset_top = -684.0
-    inspector_panel.offset_bottom = -408.0
+    inspector_panel.offset_top = -688.0
+    inspector_panel.offset_bottom = -414.0
     inspector_panel.add_theme_stylebox_override("panel", _panel_style(Color("10242df2"), 14))
     inspector_panel.visible = false
     ui_root.add_child(inspector_panel)
 
-    var inspector_box := VBoxContainer.new()
-    inspector_box.add_theme_constant_override("separation", 6)
-    inspector_panel.add_child(inspector_box)
-
-    var inspector_header := HBoxContainer.new()
-    inspector_box.add_child(inspector_header)
+    var inspector_body := Control.new()
+    inspector_body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    inspector_panel.add_child(inspector_body)
 
     var inspector_title := Label.new()
     inspector_title.text = "SELECTED CREATURE"
-    inspector_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    inspector_title.position = Vector2(4.0, 2.0)
+    inspector_title.size = Vector2(430.0, 40.0)
     inspector_title.add_theme_font_size_override("font_size", 17)
-    inspector_header.add_child(inspector_title)
+    inspector_body.add_child(inspector_title)
 
     vision_button = _make_button("VISION", _toggle_vision)
     vision_button.toggle_mode = true
-    vision_button.custom_minimum_size = Vector2(108.0, 42.0)
-    inspector_header.add_child(vision_button)
+    vision_button.position = Vector2(538.0, 0.0)
+    vision_button.size = Vector2(126.0, 42.0)
+    inspector_body.add_child(vision_button)
 
     inspector_label = RichTextLabel.new()
     inspector_label.bbcode_enabled = true
     inspector_label.fit_content = false
     inspector_label.scroll_active = false
-    inspector_label.custom_minimum_size = Vector2(0.0, 134.0)
+    inspector_label.position = Vector2(4.0, 46.0)
+    inspector_label.size = Vector2(660.0, 132.0)
     inspector_label.add_theme_font_size_override("normal_font_size", 15)
-    inspector_box.add_child(inspector_label)
-
-    var selected_grid := GridContainer.new()
-    selected_grid.columns = 4
-    selected_grid.add_theme_constant_override("h_separation", 6)
-    inspector_box.add_child(selected_grid)
+    inspector_body.add_child(inspector_label)
 
     drop_food_button = _make_button("DROP FOOD", _drop_food_selected)
-    drop_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_grid.add_child(drop_food_button)
+    drop_food_button.position = Vector2(4.0, 184.0)
+    drop_food_button.size = Vector2(158.0, 50.0)
+    inspector_body.add_child(drop_food_button)
 
     boost_button = _make_button("ENERGY", _boost_selected)
-    boost_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_grid.add_child(boost_button)
+    boost_button.position = Vector2(168.0, 184.0)
+    boost_button.size = Vector2(142.0, 50.0)
+    inspector_body.add_child(boost_button)
 
     breed_button = _make_button("MONSTER CHILD", _breed_selected)
-    breed_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_grid.add_child(breed_button)
+    breed_button.position = Vector2(316.0, 184.0)
+    breed_button.size = Vector2(196.0, 50.0)
+    inspector_body.add_child(breed_button)
 
     remove_button = _make_button("REMOVE", _remove_selected)
-    remove_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    selected_grid.add_child(remove_button)
+    remove_button.position = Vector2(518.0, 184.0)
+    remove_button.size = Vector2(146.0, 50.0)
+    inspector_body.add_child(remove_button)
 
+    # Bottom lab tray. All controls are explicitly positioned for the 720-wide
+    # portrait design instead of relying on GridContainer sizing.
     var controls_panel := PanelContainer.new()
     controls_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
     controls_panel.offset_left = 8.0
     controls_panel.offset_right = -8.0
-    controls_panel.offset_top = -398.0
+    controls_panel.offset_top = -404.0
     controls_panel.offset_bottom = -8.0
     controls_panel.add_theme_stylebox_override("panel", _panel_style(Color("0c1c24f7"), 16))
     ui_root.add_child(controls_panel)
 
-    var controls := VBoxContainer.new()
-    controls.add_theme_constant_override("separation", 7)
-    controls_panel.add_child(controls)
-
-    var control_header := HBoxContainer.new()
-    controls.add_child(control_header)
+    var controls_body := Control.new()
+    controls_body.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    controls_panel.add_child(controls_body)
 
     var control_title := Label.new()
     control_title.text = "LAB CONTROLS"
-    control_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    control_title.position = Vector2(4.0, 0.0)
+    control_title.size = Vector2(250.0, 34.0)
     control_title.add_theme_font_size_override("font_size", 19)
-    control_header.add_child(control_title)
+    controls_body.add_child(control_title)
 
     var hint := Label.new()
     hint.text = "Food is player-controlled"
+    hint.position = Vector2(386.0, 3.0)
+    hint.size = Vector2(278.0, 30.0)
+    hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
     hint.add_theme_color_override("font_color", Color("91aab5"))
     hint.add_theme_font_size_override("font_size", 13)
-    control_header.add_child(hint)
-
-    var time_grid := GridContainer.new()
-    time_grid.columns = 5
-    time_grid.add_theme_constant_override("h_separation", 6)
-    controls.add_child(time_grid)
+    controls_body.add_child(hint)
 
     pause_button = _make_button("Ⅱ PAUSE", _toggle_pause)
-    pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    time_grid.add_child(pause_button)
+    pause_button.position = Vector2(4.0, 40.0)
+    pause_button.size = Vector2(152.0, 50.0)
+    controls_body.add_child(pause_button)
 
+    var speed_x := [162.0, 286.0, 410.0, 534.0]
     for i in range(SPEEDS.size()):
         var button := _make_button("%gx" % SPEEDS[i], _set_speed.bind(i))
         button.toggle_mode = true
-        button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        time_grid.add_child(button)
+        button.position = Vector2(float(speed_x[i]), 40.0)
+        button.size = Vector2(118.0, 50.0)
+        controls_body.add_child(button)
         speed_buttons.append(button)
-
-    var lab_grid := GridContainer.new()
-    lab_grid.columns = 3
-    lab_grid.add_theme_constant_override("h_separation", 6)
-    lab_grid.add_theme_constant_override("v_separation", 6)
-    controls.add_child(lab_grid)
 
     food_paint_button = _make_button("FOOD PAINT", _toggle_food_paint)
     food_paint_button.toggle_mode = true
-    food_paint_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(food_paint_button)
+    food_paint_button.position = Vector2(4.0, 98.0)
+    food_paint_button.size = Vector2(212.0, 50.0)
+    controls_body.add_child(food_paint_button)
 
     var random_food_button := _make_button("+ RANDOM FOOD", _random_food)
-    random_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(random_food_button)
+    random_food_button.position = Vector2(222.0, 98.0)
+    random_food_button.size = Vector2(220.0, 50.0)
+    controls_body.add_child(random_food_button)
 
     var clear_food_button := _make_button("CLEAR FOOD", _clear_food)
-    clear_food_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(clear_food_button)
+    clear_food_button.position = Vector2(448.0, 98.0)
+    clear_food_button.size = Vector2(216.0, 50.0)
+    controls_body.add_child(clear_food_button)
 
     mutation_button = _make_button("MUTATION 1x", _cycle_mutation)
-    mutation_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(mutation_button)
+    mutation_button.position = Vector2(4.0, 156.0)
+    mutation_button.size = Vector2(212.0, 50.0)
+    controls_body.add_child(mutation_button)
 
     var mutants_button := _make_button("+3 MUTANTS", _introduce_mutants)
-    mutants_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(mutants_button)
+    mutants_button.position = Vector2(222.0, 156.0)
+    mutants_button.size = Vector2(220.0, 50.0)
+    controls_body.add_child(mutants_button)
 
     var cull_button := _make_button("CULL 25%", _cull_population)
-    cull_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(cull_button)
+    cull_button.position = Vector2(448.0, 156.0)
+    cull_button.size = Vector2(216.0, 50.0)
+    controls_body.add_child(cull_button)
 
     food_map_button = _make_button("FOOD MAP", _toggle_food_map)
     food_map_button.toggle_mode = true
-    food_map_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(food_map_button)
+    food_map_button.position = Vector2(4.0, 214.0)
+    food_map_button.size = Vector2(212.0, 50.0)
+    controls_body.add_child(food_map_button)
 
     var new_world_button := _make_button("NEW WORLD", _new_world)
-    new_world_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    lab_grid.add_child(new_world_button)
+    new_world_button.position = Vector2(222.0, 214.0)
+    new_world_button.size = Vector2(220.0, 50.0)
+    controls_body.add_child(new_world_button)
+
+    var select_hint := Label.new()
+    select_hint.text = "Tap a creature for individual controls"
+    select_hint.position = Vector2(448.0, 214.0)
+    select_hint.size = Vector2(216.0, 50.0)
+    select_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    select_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    select_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    select_hint.add_theme_color_override("font_color", Color("91aab5"))
+    select_hint.add_theme_font_size_override("font_size", 12)
+    controls_body.add_child(select_hint)
 
     event_label = Label.new()
-    event_label.custom_minimum_size = Vector2(0.0, 44.0)
+    event_label.position = Vector2(4.0, 274.0)
+    event_label.size = Vector2(660.0, 78.0)
     event_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     event_label.add_theme_color_override("font_color", Color("9fc3cf"))
     event_label.add_theme_font_size_override("font_size", 14)
-    controls.add_child(event_label)
+    controls_body.add_child(event_label)
 
     _update_speed_buttons()
     _update_selected_buttons()
@@ -289,7 +304,6 @@ func _build_ui() -> void:
 func _make_button(text: String, callback: Callable) -> Button:
     var button := Button.new()
     button.text = text
-    button.custom_minimum_size = Vector2(0.0, 52.0)
     button.add_theme_font_size_override("font_size", 14)
     button.add_theme_stylebox_override("normal", _button_style(Color("18333d"), 10))
     button.add_theme_stylebox_override("hover", _button_style(Color("214552"), 10))
