@@ -7,6 +7,7 @@ var selected_trail: PackedVector2Array = PackedVector2Array()
 var trail_timer: float = 0.0
 var show_vision_overlay: bool = false
 var show_food_overlay: bool = false
+var food_paint_mode: bool = false
 
 func _process(delta: float) -> void:
     if simulation == null:
@@ -55,8 +56,6 @@ func _draw_environment() -> void:
     var world_size: Vector2 = EvolutionSimulation.WORLD_SIZE
     draw_rect(Rect2(Vector2.ZERO, world_size), Color("07161e"), true)
 
-    # Broad moving water/habitat bands give the world depth without obscuring
-    # the creatures. These remain decorative in the current ecological slice.
     for y in range(105, int(world_size.y), 104):
         var wobble: float = sin(simulation.elapsed_sim_time * 0.12 + float(y) * 0.025) * 13.0
         draw_line(Vector2(0.0, float(y) + wobble), Vector2(world_size.x, float(y) - wobble), Color(0.08, 0.30, 0.34, 0.15), 24.0)
@@ -65,11 +64,12 @@ func _draw_environment() -> void:
         var shimmer: float = 0.028 + 0.022 * sin(simulation.elapsed_sim_time * 0.45 + float(x) * 0.08)
         draw_line(Vector2(float(x), 82.0), Vector2(float(x) - 95.0, world_size.y), Color(0.26, 0.67, 0.72, shimmer), 1.0)
 
-    # Drought has immediate visual feedback so the player can see that an
-    # intervention is active instead of only reading a number in the UI.
     if simulation.drought_timer > 0.0:
         var intensity: float = clampf(simulation.drought_timer / 28.0, 0.0, 1.0)
         draw_rect(Rect2(Vector2.ZERO, world_size), Color(0.30, 0.13, 0.035, 0.07 + intensity * 0.07), true)
+
+    if food_paint_mode:
+        draw_rect(Rect2(Vector2(5.0, 82.0), Vector2(world_size.x - 10.0, world_size.y - 87.0)), Color(0.18, 0.80, 0.38, 0.018), true)
 
 func _draw_food() -> void:
     for patch in simulation.food_patches:
@@ -77,29 +77,31 @@ func _draw_food() -> void:
         if fullness <= 0.02:
             continue
 
-        var sway: float = sin(simulation.elapsed_sim_time * 1.1 + patch.phase) * 2.4
-        var stem_height: float = lerpf(5.0, 14.0, sqrt(fullness))
-        var base: Vector2 = patch.position
-        var top: Vector2 = base + Vector2(sway, -stem_height)
-        var plant_color := Color(0.28, 0.82, 0.48, 0.30 + fullness * 0.58)
-        var bright_color := Color(0.48, 0.98, 0.62, 0.30 + fullness * 0.45)
+        # Compact finite food clumps. Their radius collapses visibly as eaten.
+        var pulse: float = 1.0 + sin(simulation.elapsed_sim_time * 1.6 + patch.phase) * 0.06
+        var radius: float = lerpf(2.4, 7.8, sqrt(fullness)) * pulse
+        var center: Vector2 = patch.position
+        var dark := Color(0.12, 0.42, 0.23, 0.90)
+        var green := Color(0.28, 0.88, 0.43, 0.92)
+        var bright := Color(0.63, 1.0, 0.69, 0.96)
 
-        draw_line(base + Vector2(0.0, 3.0), top, plant_color, 1.8)
-        var leaves: int = 2 + int(round(fullness * 3.0))
+        draw_circle(center, radius + 1.5, dark)
+        draw_circle(center, radius, green)
+        draw_circle(center + Vector2(-radius * 0.22, -radius * 0.25), maxf(1.0, radius * 0.28), bright)
+
+        var leaves: int = 3 + int(round(fullness * 2.0))
         for i in range(leaves):
-            var t: float = float(i + 1) / float(leaves + 1)
-            var stem_point: Vector2 = base.lerp(top, t)
-            var side: float = -1.0 if i % 2 == 0 else 1.0
-            var leaf_tip: Vector2 = stem_point + Vector2(side * (4.0 + fullness * 5.0), -2.0 + sway * 0.25)
-            draw_line(stem_point, leaf_tip, bright_color, 2.5)
-            draw_circle(leaf_tip, 1.7 + fullness * 1.4, bright_color)
-
-        draw_circle(base, 2.4 + fullness * 2.2, plant_color)
+            var a: float = patch.phase + TAU * float(i) / float(leaves)
+            var root: Vector2 = center + Vector2.RIGHT.rotated(a) * radius * 0.55
+            var tip: Vector2 = center + Vector2.RIGHT.rotated(a) * radius * 1.75
+            var side: Vector2 = Vector2.RIGHT.rotated(a + PI * 0.5) * radius * 0.38
+            var leaf := PackedVector2Array([root, tip + side, tip - side])
+            draw_colored_polygon(leaf, Color(green.r, green.g, green.b, 0.72))
 
         if show_food_overlay:
-            var overlay_radius: float = 9.0 + fullness * 8.0
-            draw_circle(base, overlay_radius, Color(0.35, 1.0, 0.50, 0.045 + fullness * 0.07))
-            draw_arc(base, overlay_radius, -PI * 0.5, -PI * 0.5 + TAU * fullness, 22, Color(0.65, 1.0, 0.65, 0.78), 1.4)
+            var overlay_radius: float = 10.0 + fullness * 10.0
+            draw_circle(center, overlay_radius, Color(0.35, 1.0, 0.50, 0.045 + fullness * 0.07))
+            draw_arc(center, overlay_radius, -PI * 0.5, -PI * 0.5 + TAU * fullness, 22, Color(0.65, 1.0, 0.65, 0.78), 1.4)
 
 func _draw_creature(org: Organism) -> void:
     var g: Genome = org.genome
@@ -125,7 +127,6 @@ func _draw_creature(org: Organism) -> void:
         spine.append(Vector2(x, y))
         widths.append(base_radius * taper * lerpf(0.82, 1.12, g.body_size))
 
-    # Tail fin. Long-tail genes change both reach and fin area continuously.
     var tail_root: Vector2 = spine[segment_count - 1]
     var tail_reach: float = g.tail_length()
     var tail_tip := tail_root + Vector2(-tail_reach, sin(swim - float(segment_count) * 0.78) * wave_amp * 0.45)
@@ -140,7 +141,6 @@ func _draw_creature(org: Organism) -> void:
     var tail_outline := PackedVector2Array([tail_poly[0], tail_poly[1], tail_poly[2], tail_poly[3], tail_poly[0]])
     draw_polyline(tail_outline, outline, 1.3, true)
 
-    # Paired appendages are rendered as flexible fins rather than sticks.
     var pairs: int = g.appendage_pairs()
     for i in range(pairs):
         var t: float = float(i + 1) / float(pairs + 1)
@@ -159,7 +159,6 @@ func _draw_creature(org: Organism) -> void:
             draw_colored_polygon(fin_poly, fin_color)
             draw_polyline(PackedVector2Array([root, tip, rear, root]), outline, 1.1, true)
 
-    # Continuous tapered body silhouette.
     var upper := PackedVector2Array()
     var lower := PackedVector2Array()
     for i in range(segment_count):
@@ -180,7 +179,6 @@ func _draw_creature(org: Organism) -> void:
         body_outline.append(body_outline[0])
     draw_polyline(body_outline, outline, 1.6, true)
 
-    # Gene-driven stripes/spots reveal gradual inherited pattern drift.
     if g.pattern_gene > 0.22:
         for i in range(1, segment_count):
             if i % 2 == 0:
@@ -191,7 +189,6 @@ func _draw_creature(org: Organism) -> void:
             for i in range(1, segment_count, 2):
                 draw_circle(spine[i] + Vector2(0.0, -widths[i] * 0.32), maxf(1.2, widths[i] * 0.19), Color(0.05, 0.12, 0.14, 0.26))
 
-    # Head shape is an ellipse polygon, not another body bead.
     var head_r: float = base_radius * g.head_scale()
     var head_pos := spine[0] + Vector2(head_r * 0.58, sin(swim + 0.45) * wave_amp * 0.18)
     var head_poly: PackedVector2Array = _ellipse_points(head_pos, head_r * lerpf(1.05, 1.42, g.head_ratio), head_r, 18)
@@ -213,9 +210,18 @@ func _draw_creature(org: Organism) -> void:
         draw_circle(eye_pos + Vector2(eye_r * 0.28, 0.0), eye_r * 0.46, Color("051015"))
 
     var mouth_x: float = head_pos.x + head_r * lerpf(1.0, 1.25, g.head_ratio)
-    var mouth_open: float = 0.10 + (0.23 if org.behavior == "feeding" else 0.0)
+    var is_eating: bool = org.feeding_flash_timer > 0.0
+    var mouth_open: float = 0.12 + (0.36 if is_eating else 0.0)
     draw_line(Vector2(mouth_x - head_r * 0.20, head_pos.y - head_r * mouth_open), Vector2(mouth_x + head_r * 0.14, head_pos.y), outline, 1.6)
     draw_line(Vector2(mouth_x - head_r * 0.20, head_pos.y + head_r * mouth_open), Vector2(mouth_x + head_r * 0.14, head_pos.y), outline, 1.6)
+
+    # Visible food fragments move toward the mouth only after biomass was consumed.
+    if is_eating:
+        for i in range(4):
+            var phase: float = fposmod(simulation.elapsed_sim_time * 9.0 + float(i) * 0.23 + float(org.id) * 0.07, 1.0)
+            var incoming_x: float = mouth_x + lerpf(16.0, 2.0, phase)
+            var incoming_y: float = head_pos.y + sin(float(i) * 2.1 + simulation.elapsed_sim_time * 14.0) * 4.0 * (1.0 - phase)
+            draw_circle(Vector2(incoming_x, incoming_y), 1.6 + (1.0 - phase) * 1.1, Color(0.48, 1.0, 0.55, 0.95))
 
     if org.energy_ratio() < 0.28:
         var bar_w: float = base_radius * 3.4
