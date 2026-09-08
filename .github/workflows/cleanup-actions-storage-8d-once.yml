@@ -11,7 +11,8 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      - name: Cleanup old Actions storage
+        uses: actions/github-script@v7
         with:
           script: |
             const cutoff = Date.now() - 8 * 24 * 60 * 60 * 1000;
