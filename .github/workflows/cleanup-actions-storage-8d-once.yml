@@ -1,0 +1,34 @@
+name: Cleanup Actions Storage Older Than 8 Days
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/cleanup-actions-storage-8d-once.yml
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const cutoff = Date.now() - 8 * 24 * 60 * 60 * 1000;
+            let ab = 0, cb = 0, ac = 0, cc = 0;
+            const arts = await github.paginate(github.rest.actions.listArtifactsForRepo, {owner: context.repo.owner, repo: context.repo.repo, per_page: 100});
+            for (const a of arts) {
+              if (new Date(a.created_at).getTime() < cutoff) {
+                await github.rest.actions.deleteArtifact({owner: context.repo.owner, repo: context.repo.repo, artifact_id: a.id});
+                ab += a.size_in_bytes || 0; ac++;
+              }
+            }
+            const caches = await github.paginate(github.rest.actions.getActionsCacheList, {owner: context.repo.owner, repo: context.repo.repo, per_page: 100});
+            for (const c of caches) {
+              const t = c.last_accessed_at || c.created_at;
+              if (new Date(t).getTime() < cutoff) {
+                await github.rest.actions.deleteActionsCacheById({owner: context.repo.owner, repo: context.repo.repo, cache_id: c.id});
+                cb += c.size_in_bytes || 0; cc++;
+              }
+            }
+            core.info(`CLEANUP_SUMMARY repo=${context.repo.owner}/${context.repo.repo} artifacts_count=${ac} artifacts_bytes=${ab} caches_count=${cc} caches_bytes=${cb} total_bytes=${ab+cb}`);
